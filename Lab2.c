@@ -123,13 +123,17 @@ void *solver(void *arg_p)
 				}
 			}
 		}
+
 		pthread_mutex_lock(&mutx);
 		block[0]++;
 		pthread_mutex_unlock(&mutx);
+
 		K++;
+
 		while(block[0] < K * block[1])
 		{
 		}
+
 		fflush(stdin);
 		fflush(stdout);
 	}
