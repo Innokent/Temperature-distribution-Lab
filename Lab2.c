@@ -223,7 +223,7 @@ int main(int argc, char* argv[])
 	{
 		if(pthread_create(&threads[i].tid, &pattr, solver, (void *) &(threads[i]))) //Создаем потоки
 		{
-			puts("Ошибка создания потока");
+			puts("Ошибка: Не удалось создать поток");
 			exit(5);
 		}
 	}
@@ -235,7 +235,7 @@ int main(int argc, char* argv[])
 	
 	FILE *output;
 	output = fopen("output.txt", "w");
-	
+
 	for(int i = 0; i < M; i++)
 	{
 		for(int j = 0; j < N; j++)
@@ -245,6 +245,18 @@ int main(int argc, char* argv[])
 	}
 	
 	fclose(output);
+
+	FILE *gnuplot;
+	gnuplot = popen("gnuplot -persist", "w");
+	if(gnuplot == NULL)
+	{
+		puts("Ошибка: Не удалось запустить Gnuplot");
+		exit(6);
+	}
+	fputs("splot 'output.txt'\n", gnuplot);
+
+	
+	fclose(gnuplot);
 
 	pthread_mutex_destroy(&mutx); // Освобождаем мьютекс
 
