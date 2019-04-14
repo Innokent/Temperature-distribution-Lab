@@ -221,7 +221,11 @@ int main(int argc, char* argv[])
 	
 	for(int i = 0; i < c_threads; i++)
 	{
-		pthread_create(&threads[i].tid, &pattr, solver, (void *) &(threads[i])); //Создаем потоки
+		if(pthread_create(&threads[i].tid, &pattr, solver, (void *) &(threads[i]))) //Создаем потоки
+		{
+			puts("Ошибка создания потока");
+			exit(5);
+		}
 	}
 
 	while(control[0] != c_threads) // Ждем завершения работы всех потоков
