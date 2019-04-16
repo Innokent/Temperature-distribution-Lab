@@ -26,7 +26,6 @@
 typedef struct 
 {
 	pthread_t tid;
-	double *mas; // Ссылка на массив начальных значений
 	int firstIndexStart;
 	int firstIndexEnd;
 	int secondIndexStart;
@@ -36,10 +35,13 @@ typedef struct
 	int m;
 } Thread_param;
 
-pthread_mutex_t mutx;
+pthread_mutex_t mutx1;
+pthread_mutex_t mutx2;
+pthread_mutex_t mutx3;
 Thread_param *threads;
-double *array;
-int control[1] = {0};
+double *prevLayer;
+double *currLayer;
+int control = 0;
 int block[2] = {0, 0};
 
 double calcNext(double T01, double T11, double T21, double T10, double T12, double dt)
@@ -97,8 +99,6 @@ double calcBoundary(int i, int j, int n, int m, double dt, double T, int mode)
 void *solver(void *arg_p)
 {
 	Thread_param *params = (Thread_param *) arg_p;
-	double *prevLayer = (double *) calloc (params->n * params->m, sizeof(double));
-	double *currLayer = (double *) calloc (params->n * params->m, sizeof(double));
 	double T01, T11, T21, T10, T12;
 	int K = 0;
 	
@@ -110,34 +110,59 @@ void *solver(void *arg_p)
 			{
 				if((i != 0) && (i != (params->n - 1)) && (j != 0) && (j != (params->m - 1)))
 				{
-					T01 = array[params->n * params->m * K + params->n * j + i - 1];
-					T11 = array[params->n * params->m * K + params->n * j + i];
-					T21 = array[params->n * params->m * K + params->n * j + i + 1];
-					T10 = array[params->n * params->m * K + params->n * (j - 1) + i];
-					T12 = array[params->n * params->m * K + params->n * (j + 1) + i];
-					array[params->n * params->m * (K + 1) + params->n * j + i] = calcNext(T01, T11, T21, T10, T12, params->dt);
+					T01 = prevLayer[params->n * j + i - 1];
+					T11 = prevLayer[params->n * j + i];
+					T21 = prevLayer[params->n * j + i + 1];
+					T10 = prevLayer[params->n * (j - 1) + i];
+					T12 = prevLayer[params->n * (j + 1) + i];
+					pthread_mutex_lock(&mutx1);
+					currLayer[params->n * j + i] = calcNext(T01, T11, T21, T10, T12, params->dt);
+					pthread_mutex_unlock(&mutx1);
 				}
 				else
 				{
-					array[params->n * params->m * (K + 1) + params->n * j + i] = calcBoundary(i, j, params->n, params->m, params->dt, array[params->n * params->m * K + params->n * j + i], currMode);
+					pthread_mutex_lock(&mutx1);
+					currLayer[params->n * j + i] = 
+							calcBoundary(i, j, params->n, params->m, params->dt, prevLayer[params->n * j + i], currMode);
+					pthread_mutex_unlock(&mutx1);
 				}
 			}
 		}
 
-		pthread_mutex_lock(&mutx);
+		pthread_mutex_lock(&mutx2);
 		block[0]++;
-		pthread_mutex_unlock(&mutx);
+		pthread_mutex_unlock(&mutx2);
 
 		K++;
 
-		while(block[0] < K * block[1])
+		while(block[0] < K * block[1]) // Ожидаем завершение работы все потоков над текущим слоем 
 		{
 		}
-
-		fflush(stdin);
-		fflush(stdout);
+		
+		if(pthread_mutex_trylock(&mutx3))
+		{
+			for(int i = 0; i < params->n; i++)
+			{
+				for(int j = 0; j < params->m; j++)
+				{
+					prevLayer[params->n * j + i] = currLayer[params->n * j + i]; 
+				}
+			}
+			
+			FILE *output = fopen("output.txt", "a");
+			for(int i = 0; i < params->n; i++)
+			{
+				for(int j = 0; j < params->m; j++)
+				{
+					fprintf(output, "%d %d %lf\n", i, j, currLayer[params->n * j + i]);
+				}
+			}
+			fprintf(output, "\n\n");
+			fclose(output);
+			pthread_mutex_unlock(&mutx3);
+		}
 	}
-	control[0]++;	
+	control++;	
 }
 
 int main(int argc, char* argv[])
@@ -172,9 +197,10 @@ int main(int argc, char* argv[])
 	N += 2; // Учитываем граничные условия для верха и низа пластины
 	M += 2; // Учитываем граничные условия для левого и правого края пластины
 
-	array = (double *) calloc (K * N * M, sizeof(double)); // Выделяем память под массив
+	prevLayer = (double *) calloc(N * M, sizeof(double)); // Выделяем память под хранение предыдущего слоя
+	currLayer = (double *) calloc(N * M, sizeof(double)); // Выделяем память под хранение текущего слоя
 
-	if(!array) // Проверяем удалось ли выделить память под массив
+	if((!prevLayer) || (!currLayer)) // Проверяем удалось ли выделить память под массив
 	{
 		puts("Ошибка: Не удалось выделить память");
 		exit(2);
@@ -186,25 +212,37 @@ int main(int argc, char* argv[])
 		{
 			if((i != 0) && (i != N - 1) && (j != 0) && (j != M - 1))
 			{
-				array[N * j + i] = 0.0;
+				prevLayer[N * j + i] = 0.0;
 			}
 			else
 			{
-				array[N * j + i] = calcBoundary(i, j, N, M, dt, 0, 1);
+				prevLayer[N * j + i] = calcBoundary(i, j, N, M, dt, 0, 1);
 			}
 		}
 	}
+	
+	FILE *output = fopen("output.txt", "w");
+	for(int i = 0; i < N; i++)
+	{
+		for(int j = 0; j < M; j++)
+		{
+			fprintf(output, "%d %d %lf\n", i, j, prevLayer[N * j + i]);
+		}
+	}
+	fprintf(output, "\n\n");
+	fclose(output);
 
 	pthread_attr_init(&pattr);
 	pthread_attr_setscope(&pattr, PTHREAD_SCOPE_SYSTEM);
 	pthread_attr_setdetachstate(&pattr, PTHREAD_CREATE_JOINABLE);
-	pthread_mutex_init(&mutx, NULL);
+
+	pthread_mutex_init(&mutx1, NULL);
+	pthread_mutex_init(&mutx2, NULL);
 
 	threads = (Thread_param *) calloc(c_threads, sizeof(Thread_param)); // Выделяем память под потоки
 
 	for(int i = 0; i < c_threads; i++) // Инициализируем атрибуты потоков
 	{
-		threads[i].mas = array;
 		threads[i].n = N;
 		threads[i].m = M;
 		threads[i].dt = dt;
@@ -232,40 +270,33 @@ int main(int argc, char* argv[])
 		}
 	}
 
-	while(control[0] != c_threads) // Ждем завершения работы всех потоков
+	while(control != c_threads) // Ждем завершения работы всех потоков
 	{
 	}
 
-	
-	FILE *output;
-	output = fopen("output.txt", "w");
+	FILE *gnuplot = popen("gnuplot -persist", "w");
 
-	for(int i = 0; i < M; i++)
-	{
-		for(int j = 0; j < N; j++)
-		{
-			fprintf(output, "%d %d %lf\n", i, j, array[N * M * (K - 2) + N * j + i]);
-		}
-	}
-	
-	fclose(output);
-
-	FILE *gnuplot;
-	gnuplot = popen("gnuplot -persist", "w");
 	if(gnuplot == NULL)
 	{
-		puts("Ошибка: Не удалось запустить Gnuplot");
+		puts("Ошибка: Не удалось запустить утилиту Gnuplot");
 		exit(6);
 	}
-	fputs("splot 'output.txt'\n", gnuplot);
 
+	fputs("set dgrid3d\n", gnuplot);
+	fputs("set hidden3d\n", gnuplot);
+
+	for(int i = 0; i < K; i++)
+	{
+		fprintf(gnuplot, "splot 'output.txt' index %d with points\n", i);
+		//usleep(500000);
+	}
 	
-	fclose(gnuplot);
-
-	pthread_mutex_destroy(&mutx); // Освобождаем мьютекс
-
-	free(array); // Освобождаем массив данных
-	free(threads); // Освобождаем массив потоков
+	pclose(gnuplot);
+	pthread_mutex_destroy(&mutx1);
+	pthread_mutex_destroy(&mutx1);
+	free(prevLayer);
+	free(currLayer);
+	free(threads);
 
 	return 1;
 }
