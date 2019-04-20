@@ -238,6 +238,7 @@ int main(int argc, char* argv[])
 
 	pthread_mutex_init(&mutx1, NULL);
 	pthread_mutex_init(&mutx2, NULL);
+	pthread_mutex_init(&mutx3, NULL);
 
 	threads = (Thread_param *) calloc(c_threads, sizeof(Thread_param)); // Выделяем память под потоки
 
@@ -270,9 +271,7 @@ int main(int argc, char* argv[])
 		}
 	}
 
-	while(control != c_threads) // Ждем завершения работы всех потоков
-	{
-	}
+	pthread_join(threads[c_threads - 1].tid, NULL);
 
 	FILE *gnuplot = popen("gnuplot -persist", "w");
 
@@ -287,13 +286,15 @@ int main(int argc, char* argv[])
 
 	for(int i = 0; i < K; i++)
 	{
-		fprintf(gnuplot, "splot 'output.txt' index %d with points\n", i);
-		//usleep(500000);
+		fprintf(gnuplot, "splot 'output.txt' index %d with lines\n", i);
+		usleep(10000);
+		fflush(gnuplot);
 	}
 	
 	pclose(gnuplot);
 	pthread_mutex_destroy(&mutx1);
-	pthread_mutex_destroy(&mutx1);
+	pthread_mutex_destroy(&mutx2);
+	pthread_mutex_destroy(&mutx3);
 	free(prevLayer);
 	free(currLayer);
 	free(threads);
