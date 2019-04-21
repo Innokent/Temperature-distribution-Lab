@@ -24,13 +24,6 @@
 #define currMode 1
 
 
-/*
-8 6 23.564581
-8 7 25.538596
-8 8 29.716577
-=============
-*/
-
 typedef struct 
 {
 	pthread_t tid;
@@ -48,7 +41,6 @@ pthread_barrier_t barr1;
 Thread_param *threads;
 double *prevLayer;
 double *currLayer;
-
 
 double calcNext(double T01, double T11, double T21, double T10, double T12, double dt)
 {
@@ -107,6 +99,7 @@ void *solver(void *arg_p)
 	Thread_param *params = (Thread_param *) arg_p;
 	double T01, T11, T21, T10, T12;
 	int K = 0;
+	double *temp = prevLayer;
 	
 	for(double t = 0.0 + params->dt; t <= maxTime; t += params->dt)
 	{
@@ -134,15 +127,11 @@ void *solver(void *arg_p)
 		K++;
 		pthread_barrier_wait(&barr1);
 		
-		/*if(!pthread_mutex_trylock(&mutx1))
+		if(!pthread_mutex_trylock(&mutx1))
 		{
-			for(int i = 0; i < params->n; i++)
-			{
-				for(int j = 0; j < params->m; j++)
-				{
-					prevLayer[params->n * j + i] = currLayer[params->n * j + i]; 
-				}
-			}
+			temp = prevLayer;
+			prevLayer = currLayer;
+			currLayer = temp;
 			
 			FILE *output = fopen("output.txt", "a");
 			for(int i = 0; i < params->n; i++)
@@ -155,7 +144,7 @@ void *solver(void *arg_p)
 			fprintf(output, "\n\n");
 			fclose(output);
 			pthread_mutex_unlock(&mutx1);
-		}*/
+		}
 	}	
 }
 
@@ -214,7 +203,7 @@ int main(int argc, char* argv[])
 		}
 	}
 	
-	/*FILE *output = fopen("output.txt", "w");
+	FILE *output = fopen("output.txt", "w");
 	for(int i = 0; i < N; i++)
 	{
 		for(int j = 0; j < M; j++)
@@ -223,7 +212,7 @@ int main(int argc, char* argv[])
 		}
 	}
 	fprintf(output, "\n\n");
-	fclose(output);*/
+	fclose(output);
 
 	pthread_attr_init(&pattr);
 	pthread_attr_setscope(&pattr, PTHREAD_SCOPE_SYSTEM);
@@ -265,7 +254,7 @@ int main(int argc, char* argv[])
 
 	pthread_join(threads[c_threads - 1].tid, NULL);
 
-	/*FILE *gnuplot = popen("gnuplot -persist", "w");
+	FILE *gnuplot = popen("gnuplot -persist", "w");
 
 	if(gnuplot == NULL)
 	{
@@ -283,7 +272,7 @@ int main(int argc, char* argv[])
 		fflush(gnuplot);
 	}
 	
-	pclose(gnuplot);*/
+	pclose(gnuplot);
 	pthread_mutex_destroy(&mutx1);
 	pthread_barrier_destroy(&barr1);
 	free(prevLayer);
