@@ -20,8 +20,16 @@
 #define boundaryConditionSecondLeft 0.3
 #define boundaryConditionFirstRight 40
 #define boundaryConditionSecondRight 0.4
-#define maxTime 100
+#define maxTime 500
 #define currMode 1
+
+
+/*
+8 6 23.564581
+8 7 25.538596
+8 8 29.716577
+=============
+*/
 
 typedef struct 
 {
@@ -36,13 +44,11 @@ typedef struct
 } Thread_param;
 
 pthread_mutex_t mutx1;
-pthread_mutex_t mutx2;
-pthread_mutex_t mutx3;
+pthread_barrier_t barr1;
 Thread_param *threads;
 double *prevLayer;
 double *currLayer;
-int control = 0;
-int block[2] = {0, 0};
+
 
 double calcNext(double T01, double T11, double T21, double T10, double T12, double dt)
 {
@@ -104,6 +110,7 @@ void *solver(void *arg_p)
 	
 	for(double t = 0.0 + params->dt; t <= maxTime; t += params->dt)
 	{
+		pthread_barrier_wait(&barr1);
 		for(int i = params->firstIndexStart; i <= params->firstIndexEnd; i++ )
 		{
 			for(int j = params->secondIndexStart; j <= params->secondIndexEnd; j++)
@@ -115,31 +122,19 @@ void *solver(void *arg_p)
 					T21 = prevLayer[params->n * j + i + 1];
 					T10 = prevLayer[params->n * (j - 1) + i];
 					T12 = prevLayer[params->n * (j + 1) + i];
-					pthread_mutex_lock(&mutx1);
 					currLayer[params->n * j + i] = calcNext(T01, T11, T21, T10, T12, params->dt);
-					pthread_mutex_unlock(&mutx1);
 				}
 				else
 				{
-					pthread_mutex_lock(&mutx1);
 					currLayer[params->n * j + i] = 
 							calcBoundary(i, j, params->n, params->m, params->dt, prevLayer[params->n * j + i], currMode);
-					pthread_mutex_unlock(&mutx1);
 				}
 			}
 		}
-
-		pthread_mutex_lock(&mutx2);
-		block[0]++;
-		pthread_mutex_unlock(&mutx2);
-
 		K++;
-
-		while(block[0] < K * block[1]) // Ожидаем завершение работы все потоков над текущим слоем 
-		{
-		}
+		pthread_barrier_wait(&barr1);
 		
-		if(pthread_mutex_trylock(&mutx3))
+		/*if(!pthread_mutex_trylock(&mutx1))
 		{
 			for(int i = 0; i < params->n; i++)
 			{
@@ -159,10 +154,9 @@ void *solver(void *arg_p)
 			}
 			fprintf(output, "\n\n");
 			fclose(output);
-			pthread_mutex_unlock(&mutx3);
-		}
-	}
-	control++;	
+			pthread_mutex_unlock(&mutx1);
+		}*/
+	}	
 }
 
 int main(int argc, char* argv[])
@@ -180,7 +174,6 @@ int main(int argc, char* argv[])
 	int N = atoi(argv[3]);
 	int M = atoi(argv[4]);
 	int K = (int)(maxTime / dt) + 1;
-	block[1] = c_threads;
 	
 	if((N * M) % 8) // Проверям кратность числа узлов восьми
 	{
@@ -221,7 +214,7 @@ int main(int argc, char* argv[])
 		}
 	}
 	
-	FILE *output = fopen("output.txt", "w");
+	/*FILE *output = fopen("output.txt", "w");
 	for(int i = 0; i < N; i++)
 	{
 		for(int j = 0; j < M; j++)
@@ -230,15 +223,14 @@ int main(int argc, char* argv[])
 		}
 	}
 	fprintf(output, "\n\n");
-	fclose(output);
+	fclose(output);*/
 
 	pthread_attr_init(&pattr);
 	pthread_attr_setscope(&pattr, PTHREAD_SCOPE_SYSTEM);
 	pthread_attr_setdetachstate(&pattr, PTHREAD_CREATE_JOINABLE);
 
 	pthread_mutex_init(&mutx1, NULL);
-	pthread_mutex_init(&mutx2, NULL);
-	pthread_mutex_init(&mutx3, NULL);
+	pthread_barrier_init(&barr1, NULL, c_threads);
 
 	threads = (Thread_param *) calloc(c_threads, sizeof(Thread_param)); // Выделяем память под потоки
 
@@ -273,7 +265,7 @@ int main(int argc, char* argv[])
 
 	pthread_join(threads[c_threads - 1].tid, NULL);
 
-	FILE *gnuplot = popen("gnuplot -persist", "w");
+	/*FILE *gnuplot = popen("gnuplot -persist", "w");
 
 	if(gnuplot == NULL)
 	{
@@ -284,17 +276,16 @@ int main(int argc, char* argv[])
 	fputs("set dgrid3d\n", gnuplot);
 	fputs("set hidden3d\n", gnuplot);
 
-	for(int i = 0; i < K; i++)
+	for(int i = 0; i < K - 1; i++)
 	{
 		fprintf(gnuplot, "splot 'output.txt' index %d with lines\n", i);
 		usleep(10000);
 		fflush(gnuplot);
 	}
 	
-	pclose(gnuplot);
+	pclose(gnuplot);*/
 	pthread_mutex_destroy(&mutx1);
-	pthread_mutex_destroy(&mutx2);
-	pthread_mutex_destroy(&mutx3);
+	pthread_barrier_destroy(&barr1);
 	free(prevLayer);
 	free(currLayer);
 	free(threads);
